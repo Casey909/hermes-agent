@@ -1215,7 +1215,7 @@ class AIAgent:
 
     def _looks_like_codex_intermediate_ack(
         self,
-        user_message: str,
+        user_message: Any,
         assistant_content: str,
         messages: List[Dict[str, Any]],
     ) -> bool:
@@ -1272,7 +1272,7 @@ class AIAgent:
             "path",
         )
 
-        user_text = (user_message or "").strip().lower()
+        user_text = self._extract_text_from_user_content(user_message).strip().lower()
         user_targets_workspace = (
             any(marker in user_text for marker in workspace_markers)
             or "~/" in user_text
@@ -2631,9 +2631,9 @@ class AIAgent:
 
             if role in {"user", "assistant"}:
                 content = msg.get("content", "")
-                content_text = str(content) if content is not None else ""
 
                 if role == "assistant":
+                    content_text = str(content) if content is not None else ""
                     # Replay encrypted reasoning items from previous turns
                     # so the API can maintain coherent reasoning chains.
                     codex_reasoning = msg.get("codex_reasoning_items")
@@ -2696,7 +2696,34 @@ class AIAgent:
                             })
                     continue
 
-                items.append({"role": role, "content": content_text})
+                # User messages: preserve multipart content (text + image_url parts)
+                # for vision support. Only stringify if content is a plain string.
+                if isinstance(content, list) and any(
+                    isinstance(p, dict) and p.get("type") in {"image_url", "input_image"}
+                    for p in content
+                ):
+                    # Convert image_url parts to Responses API input_image format
+                    responses_content: List[Dict[str, Any]] = []
+                    for part in content:
+                        if not isinstance(part, dict):
+                            continue
+                        ptype = part.get("type")
+                        if ptype == "text":
+                            text_val = str(part.get("text", "") or "").strip()
+                            if text_val:
+                                responses_content.append({"type": "input_text", "text": text_val})
+                        elif ptype in {"image_url", "input_image"}:
+                            image_data = part.get("image_url", {})
+                            url = image_data.get("url", "") if isinstance(image_data, dict) else str(image_data or "")
+                            if url:
+                                responses_content.append({"type": "input_image", "image_url": url})
+                    if responses_content:
+                        items.append({"role": "user", "content": responses_content})
+                    else:
+                        items.append({"role": "user", "content": ""})
+                else:
+                    content_text = str(content) if content is not None else ""
+                    items.append({"role": role, "content": content_text})
                 continue
 
             if role == "tool":
@@ -3855,6 +3882,42 @@ class AIAgent:
             return False
 
     # ── End provider fallback ──────────────────────────────────────────────
+
+    @staticmethod
+    def _extract_text_from_user_content(user_message: Any) -> str:
+        if isinstance(user_message, str):
+            return user_message
+        if isinstance(user_message, list):
+            text_parts: List[str] = []
+            for part in user_message:
+                if isinstance(part, str):
+                    if part.strip():
+                        text_parts.append(part.strip())
+                    continue
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") in {"text", "input_text"}:
+                    text = str(part.get("text", "") or "").strip()
+                    if text:
+                        text_parts.append(text)
+            return "\n".join(text_parts).strip()
+        return str(user_message or "")
+
+    @staticmethod
+    def _append_user_message_suffix(user_message: Any, suffix: str) -> Any:
+        if not suffix:
+            return user_message
+        if isinstance(user_message, str):
+            return user_message + suffix
+        if isinstance(user_message, list):
+            updated = list(user_message)
+            for idx, part in enumerate(updated):
+                if isinstance(part, dict) and part.get("type") in {"text", "input_text"}:
+                    text = str(part.get("text", "") or "")
+                    updated[idx] = {**part, "text": text + suffix}
+                    return updated
+            return [{"type": "text", "text": suffix.strip()}] + updated
+        return str(user_message or "") + suffix
 
     @staticmethod
     def _content_has_image_parts(content: Any) -> bool:
@@ -5360,7 +5423,7 @@ class AIAgent:
 
     def run_conversation(
         self,
-        user_message: str,
+        user_message: Any,
         system_message: str = None,
         conversation_history: List[Dict[str, Any]] = None,
         task_id: str = None,
@@ -5372,7 +5435,8 @@ class AIAgent:
         Run a complete conversation with tool calling until completion.
 
         Args:
-            user_message (str): The user's message/question
+            user_message (Any): The user's message/question. Can be plain text
+                or multimodal content parts.
             system_message (str): Custom system message (optional, overrides ephemeral_system_prompt if provided)
             conversation_history (List[Dict]): Previous conversation messages (optional)
             task_id (str): Unique identifier for this task to isolate VMs between concurrent tasks (optional, auto-generated if not provided)
@@ -5432,7 +5496,8 @@ class AIAgent:
 
         # Preserve the original user message (no nudge injection).
         # Honcho should receive the actual user input, not system nudges.
-        original_user_message = persist_user_message if persist_user_message is not None else user_message
+        user_message_text = self._extract_text_from_user_content(user_message)
+        original_user_message = persist_user_message if persist_user_message is not None else user_message_text
 
         # Track memory nudge trigger (turn-based, checked here).
         # Skill trigger is checked AFTER the agent loop completes, based on
@@ -5445,7 +5510,6 @@ class AIAgent:
             if self._turns_since_memory >= self._memory_nudge_interval:
                 _should_review_memory = True
                 self._turns_since_memory = 0
-
         # Honcho prefetch consumption:
         # - First turn: bake into cached system prompt (stable for the session).
         # - Later turns: attach recall to the current-turn user message at
@@ -5474,7 +5538,8 @@ class AIAgent:
         self._persist_user_message_idx = current_turn_user_idx
         
         if not self.quiet_mode:
-            self._safe_print(f"💬 Starting conversation: '{user_message[:60]}{'...' if len(user_message) > 60 else ''}'")
+            preview_text = self._extract_text_from_user_content(user_message)
+            self._safe_print(f"💬 Starting conversation: '{preview_text[:60]}{'...' if len(preview_text) > 60 else ''}'")
         
         # ── System prompt (cached per session for prefix caching) ──
         # Built once on first call, reused for all subsequent calls.
