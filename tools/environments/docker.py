@@ -467,28 +467,45 @@ class DockerEnvironment(BaseEnvironment):
     def cleanup(self):
         """Stop and remove the container. Bind-mount dirs persist if persistent=True."""
         if self._container_id:
-            try:
-                # Stop in background so cleanup doesn't block.
-                # Use list-based args (no shell=True) to avoid command injection.
-                subprocess.Popen(
-                    [self._docker_exe, "stop", "-t", "60", self._container_id],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-            except Exception as e:
-                logger.warning("Failed to stop container %s: %s", self._container_id, e)
+            docker_exe = self._docker_exe
+            container_id = self._container_id
 
-            if not self._persistent:
-                # Also schedule removal (stop only leaves it as stopped).
-                # Use list-based args (no shell=True) to avoid command injection.
+            def _stop_and_remove():
+                """Stop (with timeout) then force-remove the container."""
                 try:
-                    subprocess.Popen(
-                        [self._docker_exe, "rm", "-f", self._container_id],
+                    subprocess.run(
+                        [docker_exe, "stop", "-t", "60", container_id],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
+                        timeout=90,
                     )
                 except Exception:
                     pass
+                try:
+                    subprocess.run(
+                        [docker_exe, "rm", "-f", container_id],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=30,
+                    )
+                except Exception:
+                    pass
+
+            if not self._persistent:
+                # Run stop + remove in a daemon thread so cleanup doesn't block.
+                t = threading.Thread(target=_stop_and_remove, daemon=True)
+                t.start()
+            else:
+                # Persistent: only stop (no remove), still non-blocking.
+                try:
+                    subprocess.Popen(
+                        [docker_exe, "stop", "-t", "60", container_id],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                except Exception as e:
+                    logger.warning("Failed to stop container %s: %s", container_id, e)
+
             self._container_id = None
 
         if not self._persistent:
