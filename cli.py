@@ -973,7 +973,7 @@ def save_config_value(key_path: str, value: any) -> bool:
         
         # Save back
         with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
         
         # Enforce owner-only permissions on config files (contain API keys)
         try:
@@ -3744,12 +3744,13 @@ class HermesCLI:
             if base_cmd.lstrip("/") in quick_commands:
                 qcmd = quick_commands[base_cmd.lstrip("/")]
                 if qcmd.get("type") == "exec":
+                    import shlex
                     import subprocess
                     exec_cmd = qcmd.get("command", "")
                     if exec_cmd:
                         try:
                             result = subprocess.run(
-                                exec_cmd, shell=True, capture_output=True,
+                                shlex.split(exec_cmd), capture_output=True,
                                 text=True, timeout=30
                             )
                             output = result.stdout.strip() or result.stderr.strip()

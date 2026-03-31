@@ -1858,7 +1858,7 @@ def set_config_value(key: str, value: str):
     # Write only user config back (not the full merged defaults)
     ensure_hermes_home()
     with open(config_path, 'w', encoding="utf-8") as f:
-        yaml.dump(user_config, f, default_flow_style=False, sort_keys=False)
+        yaml.safe_dump(user_config, f, default_flow_style=False, sort_keys=False)
     
     # Keep .env in sync for keys that terminal_tool reads directly from env vars.
     # config.yaml is authoritative, but terminal_tool only reads TERMINAL_ENV etc.

@@ -522,7 +522,7 @@ def save_context_length(model: str, base_url: str, length: int) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
-            yaml.dump({"context_lengths": cache}, f, default_flow_style=False)
+            yaml.safe_dump({"context_lengths": cache}, f, default_flow_style=False)
         logger.info("Cached context length %s -> %s tokens", key, f"{length:,}")
     except Exception as e:
         logger.debug("Failed to save context length cache: %s", e)

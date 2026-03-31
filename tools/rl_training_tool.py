@@ -782,7 +782,7 @@ async def rl_start_training() -> str:
         run_config["env"]["wandb_name"] = _current_config["wandb_name"]
     
     with open(config_path, "w") as f:
-        yaml.dump(run_config, f, default_flow_style=False)
+        yaml.safe_dump(run_config, f, default_flow_style=False)
     
     # Create run state
     run_state = RunState(

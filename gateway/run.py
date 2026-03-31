@@ -2936,7 +2936,7 @@ class GatewayRunner:
                     config["agent"] = {}
                 config["agent"]["system_prompt"] = ""
                 with open(config_path, "w") as f:
-                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
             except Exception as e:
                 return f"⚠️ Failed to save personality change: {e}"
             self._ephemeral_system_prompt = ""
@@ -2950,7 +2950,7 @@ class GatewayRunner:
                     config["agent"] = {}
                 config["agent"]["system_prompt"] = new_prompt
                 with open(config_path, 'w', encoding="utf-8") as f:
-                    yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
             except Exception as e:
                 return f"⚠️ Failed to save personality change: {e}"
 
@@ -3041,7 +3041,7 @@ class GatewayRunner:
                     user_config = yaml.safe_load(f) or {}
             user_config[env_key] = chat_id
             with open(config_path, 'w', encoding="utf-8") as f:
-                yaml.dump(user_config, f, default_flow_style=False)
+                yaml.safe_dump(user_config, f, default_flow_style=False)
             # Also set in the current environment so it takes effect immediately
             os.environ[env_key] = str(chat_id)
         except Exception as e:
@@ -3748,7 +3748,7 @@ class GatewayRunner:
                     current = current[k]
                 current[keys[-1]] = value
                 with open(config_path, "w", encoding="utf-8") as f:
-                    yaml.dump(user_config, f, default_flow_style=False, sort_keys=False)
+                    yaml.safe_dump(user_config, f, default_flow_style=False, sort_keys=False)
                 return True
             except Exception as e:
                 logger.error("Failed to save config key %s: %s", key_path, e)

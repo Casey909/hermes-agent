@@ -355,7 +355,7 @@ class TelegramAdapter(BasePlatformAdapter):
 
             if changed:
                 with open(config_path, "w") as f:
-                    _yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+                    _yaml.safe_dump(config, f, default_flow_style=False, sort_keys=False)
                 logger.info(
                     "[%s] Persisted thread_id=%s for topic '%s' in config.yaml",
                     self.name, thread_id, topic_name,
